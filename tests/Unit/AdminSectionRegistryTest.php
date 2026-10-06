@@ -185,9 +185,9 @@ it('builds each section only once and reuses the instance', function (): void {
         ->and(LazyRegistryBuildCounter::$builds)->toBe(1);
 });
 
-it('sorts all sections by the built instance getSortOrder even when the attribute sortOrder differs', function (): void {
+it('sorts all sections by getSortOrder rather than the attribute sortOrder', function (): void {
     $registry = new AdminSectionRegistry(new Container());
-    // The definitions claim catalog comes last, but getSortOrder() returns 0 for both.
+    // The definition puts catalog last, but its getSortOrder() returns 0.
     $registry->registerDefinition(lazyRegistryDefinition(LazyRegistryCatalogSection::class, 'catalog', 99));
     $registry->register(createMockSection('content', 'Content', -10));
     $registry->register(createMockSection('reports', 'Reports', 30));
@@ -214,7 +214,7 @@ it('keeps registration order for sections with equal sort order', function (): v
     expect($ids)->toBe(['orders', 'content', 'catalog']);
 });
 
-it('wraps a section constructor failure in an AdminException naming the section class and id with the original as previous', function (): void {
+it('wraps a constructor failure in an AdminException naming the section id and class', function (): void {
     $registry = new AdminSectionRegistry(new Container());
     $registry->registerDefinition(lazyRegistryDefinition(LazyRegistryThrowingSection::class, 'broken'));
 
