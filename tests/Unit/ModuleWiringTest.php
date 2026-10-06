@@ -18,6 +18,7 @@ use Marko\Core\Discovery\CachedDiscovery;
 use Marko\Core\Module\ModuleManifest;
 use Marko\Core\Module\ModuleRepository;
 use Marko\Core\Module\ModuleRepositoryInterface;
+use RuntimeException;
 
 readonly class WiringSectionReader
 {
@@ -56,6 +57,49 @@ readonly class WiringInjectedSection implements AdminSectionInterface
     public function getLabel(): string
     {
         return $this->labels->label();
+    }
+
+    public function getIcon(): string
+    {
+        return '';
+    }
+
+    public function getSortOrder(): int
+    {
+        return 0;
+    }
+
+    public function getMenuItems(): array
+    {
+        return [];
+    }
+}
+
+#[AdminSection(id: 'pending-orders', label: 'Pending Orders')]
+class WiringDatabaseSection implements AdminSectionInterface
+{
+    public static int $builds = 0;
+
+    public static bool $fail = false;
+
+    public function __construct()
+    {
+        self::$builds++;
+
+        if (self::$fail) {
+            // A constructor that reads a table db:migrate has not created yet.
+            throw new RuntimeException("Table 'orders' doesn't exist");
+        }
+    }
+
+    public function getId(): string
+    {
+        return 'pending-orders';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Pending Orders';
     }
 
     public function getIcon(): string
@@ -155,7 +199,7 @@ it('shares registered sections between separately injected consumers', function 
     expect($ids)->toBe(['injected']);
 });
 
-it('registers an attribute-declared section at boot with no manual registration', function (): void {
+it('builds an attribute-declared section on first use with no manual registration', function (): void {
     $appModule = adminWiringAppModule('ReportsSection.php', <<<'PHP'
 <?php
 
@@ -311,14 +355,44 @@ function adminWiringCache(
     ]);
 }
 
-it('throws sectionIdMismatch when getId differs from the attribute id', function (): void {
+it('throws sectionIdMismatch on first use, not at boot', function (): void {
     $container = adminModuleContainer(adminWiringCache(WiringInjectedSection::class, 'other'));
 
-    expect(fn () => $container->call(adminModule()['boot']))->toThrow(
+    $container->call(adminModule()['boot']);
+
+    expect(fn () => $container->get(AdminSectionRegistryInterface::class)->get('other'))->toThrow(
         AdminException::class,
         "Admin section '" . WiringInjectedSection::class
         . "' declares id 'other' in #[AdminSection] but getId() returns 'injected'",
     );
+});
+
+it('builds no section at boot', function (): void {
+    WiringDatabaseSection::$builds = 0;
+    WiringDatabaseSection::$fail = false;
+    $container = adminModuleContainer(adminWiringCache(WiringDatabaseSection::class, 'pending-orders'));
+
+    $container->call(adminModule()['boot']);
+
+    expect(WiringDatabaseSection::$builds)->toBe(0);
+});
+
+it('boots when a section constructor throws, and fails the first use naming the section', function (): void {
+    WiringDatabaseSection::$builds = 0;
+    WiringDatabaseSection::$fail = true;
+    $container = adminModuleContainer(adminWiringCache(WiringDatabaseSection::class, 'pending-orders'));
+
+    try {
+        $container->call(adminModule()['boot']);
+
+        expect(fn () => $container->get(AdminSectionRegistryInterface::class)->all())->toThrow(
+            AdminException::class,
+            "Admin section 'pending-orders' (" . WiringDatabaseSection::class . ') could not be built: '
+            . "Table 'orders' doesn't exist",
+        );
+    } finally {
+        WiringDatabaseSection::$fail = false;
+    }
 });
 
 it('tells you to recompile the discovery cache when a cached section class no longer exists', function (): void {

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 use Marko\Admin\Contracts\AdminSectionInterface;
 use Marko\Admin\Contracts\AdminSectionRegistryInterface;
+use Marko\Admin\Discovery\AdminSectionDefinition;
 
-it('creates AdminSectionRegistryInterface with register, all, get methods', function (): void {
+it('creates AdminSectionRegistryInterface with register, registerDefinition, all, get methods', function (): void {
     $reflection = new ReflectionClass(AdminSectionRegistryInterface::class);
 
     expect($reflection->isInterface())->toBeTrue()
         ->and($reflection->hasMethod('register'))->toBeTrue()
+        ->and($reflection->hasMethod('registerDefinition'))->toBeTrue()
         ->and($reflection->hasMethod('all'))->toBeTrue()
         ->and($reflection->hasMethod('get'))->toBeTrue();
 
@@ -18,6 +20,12 @@ it('creates AdminSectionRegistryInterface with register, all, get methods', func
     expect($registerParams)->toHaveCount(1)
         ->and($registerParams[0]->getType()->getName())->toBe(AdminSectionInterface::class)
         ->and($register->getReturnType()->getName())->toBe('void');
+
+    $registerDefinition = $reflection->getMethod('registerDefinition');
+    $registerDefinitionParams = $registerDefinition->getParameters();
+    expect($registerDefinitionParams)->toHaveCount(1)
+        ->and($registerDefinitionParams[0]->getType()->getName())->toBe(AdminSectionDefinition::class)
+        ->and($registerDefinition->getReturnType()->getName())->toBe('void');
 
     $all = $reflection->getMethod('all');
     expect($all->getReturnType()->getName())->toBe('array')

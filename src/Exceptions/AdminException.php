@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Marko\Admin\Exceptions;
 
 use Marko\Core\Exceptions\MarkoException;
+use Throwable;
 
 class AdminException extends MarkoException
 {
@@ -36,8 +37,22 @@ class AdminException extends MarkoException
     ): self {
         return new self(
             message: "Admin section '$className' declares id '$attributeId' in #[AdminSection] but getId() returns '$instanceId'",
-            context: "While registering admin section '$className' at boot",
+            context: "While building admin section '$className' on first use",
             suggestion: "Make getId() return '$attributeId', or change the #[AdminSection] id to '$instanceId'",
+        );
+    }
+
+    public static function sectionBuildFailed(
+        string $id,
+        string $className,
+        Throwable $previous,
+    ): self {
+        return new self(
+            message: "Admin section '$id' ($className) could not be built: {$previous->getMessage()}",
+            context: "While building admin section '$id' on first use",
+            suggestion: "Fix the error in '$className' or one of its constructor dependencies. "
+                . 'Sections are built on first use, so the error only affects requests that need admin sections',
+            previous: $previous,
         );
     }
 
