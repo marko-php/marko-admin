@@ -10,6 +10,49 @@ use Marko\Core\Discovery\CachedDiscovery;
 use Marko\Core\Module\ModuleManifest;
 use Marko\Core\Module\ModuleRepository;
 
+/**
+ * A module whose src/ declares one section.
+ */
+function discoveredSectionsTestModule(): ModuleManifest
+{
+    $tempDir = sys_get_temp_dir() . '/marko-admin-discovered-test-' . bin2hex(random_bytes(8));
+    mkdir($tempDir . '/src', 0755, true);
+    file_put_contents($tempDir . '/src/DockSection.php', <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+namespace AdminDiscoveredTest;
+
+use Marko\Admin\Attributes\AdminSection;
+use Marko\Admin\Contracts\AdminSectionInterface;
+
+#[AdminSection(id: 'dock', label: 'Dock')]
+class DockSection implements AdminSectionInterface
+{
+    public function getId(): string { return 'dock'; }
+    public function getLabel(): string { return 'Dock'; }
+    public function getIcon(): string { return ''; }
+    public function getSortOrder(): int { return 0; }
+    public function getMenuItems(): array { return []; }
+}
+PHP);
+
+    return new ModuleManifest(
+        name: 'test/dock',
+        version: '1.0.0',
+        path: $tempDir,
+    );
+}
+
+function removeDiscoveredSectionsTestModule(
+    ModuleManifest $module,
+): void {
+    unlink($module->path . '/src/DockSection.php');
+    rmdir($module->path . '/src');
+    rmdir($module->path);
+}
+
 function discoveredAdminSections(
     CachedDiscovery $cachedDiscovery,
     ModuleManifest ...$modules,
@@ -53,26 +96,26 @@ describe('DiscoveredAdminSections', function (): void {
     });
 
     it('scans the enabled modules when the boot did not use the cache', function (): void {
-        $module = adminCacheTestModule();
+        $module = discoveredSectionsTestModule();
 
         try {
             $definitions = discoveredAdminSections(new CachedDiscovery(), $module)->all();
         } finally {
-            removeAdminCacheTestModule($module);
+            removeDiscoveredSectionsTestModule($module);
         }
 
         expect(array_map(fn (AdminSectionDefinition $definition): string => $definition->id, $definitions))
-            ->toBe(['warehouse']);
+            ->toBe(['dock']);
     });
 
     it('parses the sections only once', function (): void {
-        $module = adminCacheTestModule();
+        $module = discoveredSectionsTestModule();
         $sections = discoveredAdminSections(new CachedDiscovery(), $module);
 
         try {
             $first = $sections->all();
         } finally {
-            removeAdminCacheTestModule($module);
+            removeDiscoveredSectionsTestModule($module);
         }
 
         // The module is gone, so a second scan would find nothing.

@@ -105,10 +105,10 @@ describe('AdminSectionCacheContributor', function (): void {
         'throws a malformed section error for an invalid cached record',
         function (array $section, string $problem): void {
             $contributor = new AdminSectionCacheContributor(new AdminSectionDiscovery());
-    
+
             expect(fn () => $contributor->hydrate($section))
                 ->toThrow(DiscoveryCacheException::class, $problem);
-        }
+        },
     )->with([
         'record is not an array' => [['warehouse'], 'admin section 0 must be an array'],
         'missing class name' => [
