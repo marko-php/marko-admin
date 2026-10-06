@@ -265,7 +265,207 @@ PHP;
     cleanupAdminTestDirectory($tempDir2);
 });
 
+it('throws AdminException naming the class when the class has no AdminSection attribute', function (): void {
+    $discovery = new AdminSectionDiscovery();
+
+    expect(fn () => $discovery->parseAdminSectionClass(SectionInterfaceWithoutAttribute::class))
+        ->toThrow(
+            AdminException::class,
+            "Class '" . SectionInterfaceWithoutAttribute::class . "' is not marked with #[AdminSection]",
+        );
+});
+
+it('suggests adding the AdminSection attribute when the attribute is missing', function (): void {
+    $discovery = new AdminSectionDiscovery();
+
+    try {
+        $discovery->parseAdminSectionClass(SectionInterfaceWithoutAttribute::class);
+        $this->fail('Expected AdminException was not thrown');
+    } catch (AdminException $e) {
+        expect($e->getContext())
+            ->toBe("While parsing admin section class '" . SectionInterfaceWithoutAttribute::class . "'")
+            ->and($e->getSuggestion())
+            ->toBe(
+                "Add #[AdminSection(id: ..., label: ...)] to the class, or don't pass it to admin section discovery",
+            );
+    }
+});
+
+it('reports the missing attribute before the missing interface when a class has neither', function (): void {
+    $discovery = new AdminSectionDiscovery();
+
+    expect(fn () => $discovery->parseAdminSectionClass(PlainClassWithoutAttribute::class))
+        ->toThrow(AdminException::class, 'is not marked with #[AdminSection]');
+});
+
+it('still throws the interface exception for a class with the attribute but without the interface', function (): void {
+    $discovery = new AdminSectionDiscovery();
+
+    expect(fn () => $discovery->parseAdminSectionClass(InvalidAdminSectionNoInterface::class))
+        ->toThrow(
+            AdminException::class,
+            "Class '" . InvalidAdminSectionNoInterface::class . "' has #[AdminSection] attribute but does not implement AdminSectionInterface",
+        );
+});
+
+/**
+ * Write PHP files into a fresh temporary module and return its manifest.
+ *
+ * @param array<string, string> $files File name => file contents
+ */
+function createAdminTestModule(
+    array $files,
+): ModuleManifest {
+    $tempDir = sys_get_temp_dir() . '/marko-admin-discovery-test-' . bin2hex(random_bytes(8));
+    mkdir($tempDir . '/src', 0755, true);
+
+    foreach ($files as $name => $contents) {
+        file_put_contents($tempDir . '/src/' . $name, $contents);
+    }
+
+    return new ModuleManifest(
+        name: 'test/module',
+        version: '1.0.0',
+        path: $tempDir,
+    );
+}
+
+it('skips files that mention AdminSection only in a comment', function (): void {
+    $manifest = createAdminTestModule([
+        'CommentedHelper.php' => <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+namespace AdminDiscoveryTestComment;
+
+/**
+ * Not a section. Sections are marked with #[AdminSection(id: ..., label: ...)].
+ */
+class CommentedHelper
+{
+    // #[AdminSection(id: 'old', label: 'Old')]
+    public function help(): void {}
+}
+PHP,
+    ]);
+
+    $files = (new AdminSectionDiscovery())->discoverInModule($manifest);
+
+    expect($files)->toBe([]);
+
+    cleanupAdminTestDirectory($manifest->path);
+});
+
+it('skips files whose attribute name only starts with AdminSection', function (): void {
+    $manifest = createAdminTestModule([
+        'AdminSectionWidget.php' => <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+namespace AdminDiscoveryTestPrefix;
+
+use Attribute;
+
+#[Attribute(Attribute::TARGET_CLASS)]
+class AdminSectionWidget {}
+PHP,
+        'SalesWidget.php' => <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+namespace AdminDiscoveryTestPrefix;
+
+#[AdminSectionWidget]
+class SalesWidget {}
+PHP,
+    ]);
+
+    $files = (new AdminSectionDiscovery())->discoverInModule($manifest);
+
+    expect($files)->toBe([]);
+
+    cleanupAdminTestDirectory($manifest->path);
+});
+
+it('skips files that declare no class', function (): void {
+    $manifest = createAdminTestModule([
+        'notes.php' => <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+// Remember to add #[AdminSection] to new sections.
+return [];
+PHP,
+    ]);
+
+    $files = (new AdminSectionDiscovery())->discoverInModule($manifest);
+
+    expect($files)->toBe([]);
+
+    cleanupAdminTestDirectory($manifest->path);
+});
+
+it('still reports a file whose class has the attribute but does not implement the interface', function (): void {
+    $manifest = createAdminTestModule([
+        'BrokenSection.php' => <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+namespace AdminDiscoveryTestBroken;
+
+use Marko\Admin\Attributes\AdminSection;
+
+#[AdminSection(id: 'broken', label: 'Broken')]
+class BrokenSection {}
+PHP,
+    ]);
+
+    $files = (new AdminSectionDiscovery())->discoverInModule($manifest);
+
+    expect($files)
+        ->toHaveCount(1)
+        ->and($files[0])->toEndWith('BrokenSection.php');
+
+    cleanupAdminTestDirectory($manifest->path);
+});
+
 // Test fixture classes for reflection-based tests
+
+class SectionInterfaceWithoutAttribute implements AdminSectionInterface
+{
+    public function getId(): string
+    {
+        return 'unmarked';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Unmarked';
+    }
+
+    public function getIcon(): string
+    {
+        return '';
+    }
+
+    public function getSortOrder(): int
+    {
+        return 0;
+    }
+
+    /** @return array<MenuItemInterface> */
+    public function getMenuItems(): array
+    {
+        return [];
+    }
+}
+
+class PlainClassWithoutAttribute {}
 
 #[AdminSection(id: 'invalid', label: 'Invalid')]
 class InvalidAdminSectionNoInterface

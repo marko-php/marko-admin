@@ -26,6 +26,15 @@ class AdminException extends MarkoException
         );
     }
 
+    public static function missingSectionAttribute(string $className): self
+    {
+        return new self(
+            message: "Class '$className' is not marked with #[AdminSection]",
+            context: "While parsing admin section class '$className'",
+            suggestion: "Add #[AdminSection(id: ..., label: ...)] to the class, or don't pass it to admin section discovery",
+        );
+    }
+
     public static function sectionMustImplementInterface(string $className): self
     {
         return new self(
