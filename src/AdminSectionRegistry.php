@@ -21,7 +21,7 @@ class AdminSectionRegistry implements AdminSectionRegistryInterface
         $id = $section->getId();
 
         if (isset($this->sections[$id])) {
-            throw AdminException::duplicateSection($id);
+            throw AdminException::duplicateSection($id, $this->sections[$id]::class, $section::class);
         }
 
         $this->sections[$id] = $section;

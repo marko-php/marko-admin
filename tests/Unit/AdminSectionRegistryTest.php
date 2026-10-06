@@ -45,7 +45,7 @@ it('throws AdminException when registering duplicate section id', function (): v
 
     $registry->register($section1);
     $registry->register($section2);
-})->throws(AdminException::class, "Admin section with id 'catalog' is already registered");
+})->throws(AdminException::class, "Admin section with id 'catalog' is declared by both");
 
 it('throws AdminException when getting nonexistent section', function (): void {
     $registry = new AdminSectionRegistry();

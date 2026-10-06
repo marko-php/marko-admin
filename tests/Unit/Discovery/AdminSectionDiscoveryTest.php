@@ -75,7 +75,7 @@ PHP;
     expect($files)
         ->toBeArray()
         ->toHaveCount(1)
-        ->and($files[0])->toEndWith('CatalogSection.php');
+        ->and($files[0])->toBe('AdminDiscoveryTest1\\CatalogSection');
 
     cleanupAdminTestDirectory($tempDir);
 });
@@ -258,8 +258,8 @@ PHP;
     expect($allFiles)
         ->toBeArray()
         ->toHaveCount(2)
-        ->and($allFiles[0])->toEndWith('CatalogSection.php')
-        ->and($allFiles[1])->toEndWith('SalesSection.php');
+        ->and($allFiles[0])->toBe('AdminDiscoveryTestMulti1\\CatalogSection')
+        ->and($allFiles[1])->toBe('AdminDiscoveryTestMulti2\\SalesSection');
 
     cleanupAdminTestDirectory($tempDir1);
     cleanupAdminTestDirectory($tempDir2);
@@ -429,9 +429,182 @@ PHP,
 
     expect($files)
         ->toHaveCount(1)
-        ->and($files[0])->toEndWith('BrokenSection.php');
+        ->and($files[0])->toBe('AdminDiscoveryTestBroken\\BrokenSection');
 
     cleanupAdminTestDirectory($manifest->path);
+});
+
+/**
+ * PHP source for a valid admin section class.
+ */
+function adminTestSectionSource(
+    string $namespace,
+    string $className,
+    string $id,
+    string $attribute = '#[AdminSection(id: \'%s\', label: \'%s\')]',
+    string $imports = "use Marko\\Admin\\Attributes\\AdminSection;\n",
+): string {
+    $attributeLine = sprintf($attribute, $id, ucfirst($id));
+
+    return <<<PHP
+<?php
+
+declare(strict_types=1);
+
+namespace $namespace;
+
+{$imports}use Marko\\Admin\\Contracts\\AdminSectionInterface;
+
+$attributeLine
+class $className implements AdminSectionInterface
+{
+    public function getId(): string { return '$id'; }
+    public function getLabel(): string { return '$id'; }
+    public function getIcon(): string { return ''; }
+    public function getSortOrder(): int { return 0; }
+    public function getMenuItems(): array { return []; }
+}
+PHP;
+}
+
+it('discovers every admin section class in a file that declares several classes', function (): void {
+    $manifest = createAdminTestModule([
+        'Sections.php' => <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+namespace AdminDiscoveryTestSeveral;
+
+use Marko\Admin\Attributes\AdminSection;
+use Marko\Admin\Contracts\AdminSectionInterface;
+
+class SectionHelper {}
+
+#[AdminSection(id: 'orders', label: 'Orders')]
+class OrdersSection implements AdminSectionInterface
+{
+    public function getId(): string { return 'orders'; }
+    public function getLabel(): string { return 'Orders'; }
+    public function getIcon(): string { return ''; }
+    public function getSortOrder(): int { return 0; }
+    public function getMenuItems(): array { return []; }
+}
+
+#[AdminSection(id: 'invoices', label: 'Invoices')]
+class InvoicesSection implements AdminSectionInterface
+{
+    public function getId(): string { return 'invoices'; }
+    public function getLabel(): string { return 'Invoices'; }
+    public function getIcon(): string { return ''; }
+    public function getSortOrder(): int { return 0; }
+    public function getMenuItems(): array { return []; }
+}
+PHP,
+    ]);
+
+    $classNames = (new AdminSectionDiscovery())->discoverInModule($manifest);
+
+    expect($classNames)->toBe([
+        'AdminDiscoveryTestSeveral\\OrdersSection',
+        'AdminDiscoveryTestSeveral\\InvoicesSection',
+    ]);
+
+    cleanupAdminTestDirectory($manifest->path);
+});
+
+it('discovers a section marked with the fully-qualified attribute name', function (): void {
+    $manifest = createAdminTestModule([
+        'QualifiedSection.php' => adminTestSectionSource(
+            namespace: 'AdminDiscoveryTestQualified',
+            className: 'QualifiedSection',
+            id: 'qualified',
+            attribute: '#[\\Marko\\Admin\\Attributes\\AdminSection(id: \'%s\', label: \'%s\')]',
+            imports: '',
+        ),
+    ]);
+
+    $classNames = (new AdminSectionDiscovery())->discoverInModule($manifest);
+
+    expect($classNames)->toBe(['AdminDiscoveryTestQualified\\QualifiedSection']);
+
+    cleanupAdminTestDirectory($manifest->path);
+});
+
+it('discovers a section marked with an aliased attribute import', function (): void {
+    $manifest = createAdminTestModule([
+        'AliasedSection.php' => adminTestSectionSource(
+            namespace: 'AdminDiscoveryTestAliased',
+            className: 'AliasedSection',
+            id: 'aliased',
+            attribute: '#[Section(id: \'%s\', label: \'%s\')]',
+            imports: "use Marko\\Admin\\Attributes\\AdminSection as Section;\n",
+        ),
+    ]);
+
+    $classNames = (new AdminSectionDiscovery())->discoverInModule($manifest);
+
+    expect($classNames)->toBe(['AdminDiscoveryTestAliased\\AliasedSection']);
+
+    cleanupAdminTestDirectory($manifest->path);
+});
+
+it('discovers a section whose attribute is grouped with another attribute', function (): void {
+    $manifest = createAdminTestModule([
+        'GroupedSection.php' => adminTestSectionSource(
+            namespace: 'AdminDiscoveryTestGrouped',
+            className: 'GroupedSection',
+            id: 'grouped',
+            attribute: '#[AdminPermission(id: \'grouped.view\'), AdminSection(id: \'%s\', label: \'%s\')]',
+            imports: "use Marko\\Admin\\Attributes\\AdminPermission;\nuse Marko\\Admin\\Attributes\\AdminSection;\n",
+        ),
+    ]);
+
+    $classNames = (new AdminSectionDiscovery())->discoverInModule($manifest);
+
+    expect($classNames)->toBe(['AdminDiscoveryTestGrouped\\GroupedSection']);
+
+    cleanupAdminTestDirectory($manifest->path);
+});
+
+it('parses every discovered section across modules in module order', function (): void {
+    $first = createAdminTestModule([
+        'BillingSection.php' => adminTestSectionSource('AdminDiscoveryTestAllFirst', 'BillingSection', 'billing'),
+    ]);
+    $second = createAdminTestModule([
+        'ReportsSection.php' => adminTestSectionSource('AdminDiscoveryTestAllSecond', 'ReportsSection', 'reports'),
+    ]);
+
+    $definitions = (new AdminSectionDiscovery())->discoverAll([$first, $second]);
+
+    expect(array_map(fn (AdminSectionDefinition $definition): string => $definition->className, $definitions))
+        ->toBe(['AdminDiscoveryTestAllFirst\\BillingSection', 'AdminDiscoveryTestAllSecond\\ReportsSection'])
+        ->and(array_map(fn (AdminSectionDefinition $definition): string => $definition->id, $definitions))
+        ->toBe(['billing', 'reports']);
+
+    cleanupAdminTestDirectory($first->path);
+    cleanupAdminTestDirectory($second->path);
+});
+
+it('throws duplicateSection naming both classes when two sections share an id', function (): void {
+    $first = createAdminTestModule([
+        'TeamSection.php' => adminTestSectionSource('AdminDiscoveryTestDupFirst', 'TeamSection', 'team'),
+    ]);
+    $second = createAdminTestModule([
+        'TeamSection.php' => adminTestSectionSource('AdminDiscoveryTestDupSecond', 'TeamSection', 'team'),
+    ]);
+
+    try {
+        expect(fn () => (new AdminSectionDiscovery())->discoverAll([$first, $second]))
+            ->toThrow(
+                AdminException::class,
+                "Admin section with id 'team' is declared by both 'AdminDiscoveryTestDupFirst\\TeamSection'"
+                . " and 'AdminDiscoveryTestDupSecond\\TeamSection'",
+            );
+    } finally {
+        cleanupAdminTestDirectory($first->path);
+        cleanupAdminTestDirectory($second->path);
+    }
 });
 
 // Test fixture classes for reflection-based tests
